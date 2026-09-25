@@ -1,0 +1,67 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    services:
+      couchbase:
+        image: couchbase:enterprise-7.6.4
+        ports:
+          - 8091-8096:8091-8096
+          - 11210:11210
+    env:
+      CB_CLUSTER: couchbase://localhost
+      CB_USERNAME: Administrator
+      CB_PASSWORD: password
+      CB_BUCKET: test
+      CB_SCOPE: langgraph
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Dependencies
+        run: pip install -e . pytest pytest-asyncio hatch
+
+      - name: Initialize Couchbase
+        env:
+          CB_CONTAINER: ${{ job.services.couchbase.id }}
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8091/ui/index.html > /dev/null && break
+            sleep 2
+          done
+          cli() { docker exec "$CB_CONTAINER" couchbase-cli "$@" -c localhost; }
+          cli cluster-init --cluster-username "$CB_USERNAME" --cluster-password "$CB_PASSWORD" \
+            --services data,index,query --cluster-ramsize 1024 --cluster-index-ramsize 256
+          cli bucket-create -u "$CB_USERNAME" -p "$CB_PASSWORD" --bucket "$CB_BUCKET" \
+            --bucket-type couchbase --bucket-ramsize 256 --wait
+          cli collection-manage -u "$CB_USERNAME" -p "$CB_PASSWORD" --bucket "$CB_BUCKET" --create-scope "$CB_SCOPE"
+          for i in $(seq 1 60); do
+            curl -sf -u "$CB_USERNAME:$CB_PASSWORD" http://localhost:8093/query/service \
+              --data-urlencode 'statement=SELECT 1' > /dev/null && break
+            sleep 2
+          done
+
+      - name: Run Tests
+        run: pytest tests/test_checkpointer.py -v
+
+      - name: Hatch build
+        run: hatch build
