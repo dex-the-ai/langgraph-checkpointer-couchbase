@@ -5,7 +5,8 @@ AsyncCouchbaseSaver directly and through a minimal LangGraph StateGraph.
 
 Required environment variables: CB_CLUSTER, CB_USERNAME, CB_PASSWORD,
 CB_BUCKET, CB_SCOPE. The bucket and scope must already exist; the saver
-creates its collections.
+creates its collections. Create the indexes listed in the README so reads
+see checkpoints written immediately before.
 """
 import operator
 import os

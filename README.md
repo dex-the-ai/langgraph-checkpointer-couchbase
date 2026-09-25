@@ -138,6 +138,17 @@ async with AsyncCouchbaseSaver.from_cluster(
 await cluster.close()
 ```
 
+## Recommended Indexes
+
+The saver creates the `checkpoints` and `checkpoint_writes` collections on first use, but not indexes. Without them, queries fall back to sequential scans, which are slow on large collections and may not return a checkpoint written immediately before. Create these indexes once per scope (replace `test` and `langgraph` with your bucket and scope):
+
+```sql
+CREATE INDEX idx_checkpoints_thread IF NOT EXISTS
+  ON `test`.`langgraph`.`checkpoints`(thread_id, checkpoint_ns, checkpoint_id);
+CREATE INDEX idx_checkpoint_writes_thread IF NOT EXISTS
+  ON `test`.`langgraph`.`checkpoint_writes`(thread_id, checkpoint_ns, checkpoint_id);
+```
+
 ## Configuration Options
 
 | Parameter | Description | Default |
@@ -150,7 +161,7 @@ await cluster.close()
 
 ## Running the Tests
 
-The checkpointer tests run against a live Couchbase cluster and do not need an LLM. Create the bucket and scope first, then:
+The checkpointer tests run against a live Couchbase cluster and do not need an LLM. Create the bucket, scope, and the [recommended indexes](#recommended-indexes) first, then:
 
 ```bash
 pip install -e . pytest pytest-asyncio

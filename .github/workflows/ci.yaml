@@ -81,6 +81,13 @@ jobs:
                   print(f"Waiting for Couchbase: {type(e).__name__}")
                   time.sleep(3)
 
+      - name: Create Checkpoint Indexes
+        run: |
+          for c in checkpoints checkpoint_writes; do
+            curl -sf -u "$CB_USERNAME:$CB_PASSWORD" http://localhost:8093/query/service \
+              --data-urlencode "statement=CREATE INDEX idx_${c}_thread IF NOT EXISTS ON \`$CB_BUCKET\`.\`$CB_SCOPE\`.\`$c\`(thread_id, checkpoint_ns, checkpoint_id)"
+          done
+
       - name: Run Tests
         run: pytest tests/test_checkpointer.py -v
 
