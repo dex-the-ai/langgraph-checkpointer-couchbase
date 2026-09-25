@@ -54,11 +54,32 @@ jobs:
           cli bucket-create -u "$CB_USERNAME" -p "$CB_PASSWORD" --bucket "$CB_BUCKET" \
             --bucket-type couchbase --bucket-ramsize 256 --wait
           cli collection-manage -u "$CB_USERNAME" -p "$CB_PASSWORD" --bucket "$CB_BUCKET" --create-scope "$CB_SCOPE"
-          for i in $(seq 1 60); do
-            curl -sf -u "$CB_USERNAME:$CB_PASSWORD" http://localhost:8093/query/service \
-              --data-urlencode 'statement=SELECT 1' > /dev/null && break
-            sleep 2
-          done
+
+      # A freshly initialized node can reject queries for a short while.
+      - name: Wait for Couchbase Query Service
+        shell: python
+        run: |
+          import os, time
+          from langgraph_checkpointer_couchbase import CouchbaseSaver
+
+          deadline = time.time() + 180
+          while True:
+              try:
+                  with CouchbaseSaver.from_conn_info(
+                      cb_conn_str=os.environ["CB_CLUSTER"],
+                      cb_username=os.environ["CB_USERNAME"],
+                      cb_password=os.environ["CB_PASSWORD"],
+                      bucket_name=os.environ["CB_BUCKET"],
+                      scope_name=os.environ["CB_SCOPE"],
+                  ) as saver:
+                      saver.get_tuple({"configurable": {"thread_id": "ci-readiness"}})
+                  print("Couchbase query service is ready")
+                  break
+              except Exception as e:
+                  if time.time() > deadline:
+                      raise
+                  print(f"Waiting for Couchbase: {type(e).__name__}")
+                  time.sleep(3)
 
       - name: Run Tests
         run: pytest tests/test_checkpointer.py -v
